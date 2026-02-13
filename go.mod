@@ -8,7 +8,6 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.16.0
 	github.com/prometheus/common v0.44.0
-	github.com/romantomjak/shoutcast v1.2.0
 	github.com/zachfi/zkit v0.1.1-0.20230829182645-821a92a34bb1
 	gopkg.in/yaml.v2 v2.4.0
 )

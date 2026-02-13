@@ -125,9 +125,6 @@ github.com/prometheus/exporter-toolkit/web
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/romantomjak/shoutcast v1.2.0
-## explicit
-github.com/romantomjak/shoutcast
 # github.com/sercand/kuberesolver/v4 v4.0.0
 ## explicit; go 1.14
 github.com/sercand/kuberesolver/v4

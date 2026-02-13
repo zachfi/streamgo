@@ -25,7 +25,10 @@ func (cw *ChannelWriter) Write(p []byte) (n int, err error) {
 		return 0, io.ErrClosedPipe
 	}
 
-	cw.dataChan <- p
+	// Copy the data to avoid issues if the caller reuses the buffer
+	data := make([]byte, len(p))
+	copy(data, p)
+	cw.dataChan <- data
 
 	return len(p), nil
 }

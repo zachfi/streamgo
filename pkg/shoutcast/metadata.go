@@ -22,7 +22,7 @@ func NewMetadata(b []byte) *Metadata {
 			continue
 		}
 		parts := strings.Split(prop, "=")
-		if parts[0] == "StreamTitle" {
+		if len(parts) >= 2 && parts[0] == "StreamTitle" {
 			m.StreamTitle = strings.Trim(parts[1], "'")
 		}
 	}

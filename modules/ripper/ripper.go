@@ -8,18 +8,19 @@ import (
 	"os"
 	"path"
 	"sync"
-	"time"
 
 	"github.com/grafana/dskit/services"
-	"github.com/romantomjak/shoutcast"
+
+	"github.com/zachfi/streamgo/pkg/shoutcast"
 )
 
 type Ripper struct {
 	services.Service
-	cfg    *Config
-	logger *slog.Logger
-	stream *shoutcast.Stream
-	w      *ChannelWriter
+	cfg     *Config
+	logger  *slog.Logger
+	stream  *shoutcast.Stream
+	w       *ChannelWriter
+	copyWg  sync.WaitGroup // signals when the io.Copy goroutine has exited
 }
 
 var module = "ripper"
@@ -52,18 +53,20 @@ func (r *Ripper) running(ctx context.Context) error {
 	var f *os.File
 	var wCtx context.Context
 	var cancel context.CancelFunc
+	var writerDone chan struct{} // closed when the current writer goroutine exits
 
 	bufferMutex := &sync.Mutex{}
 
 	cw := NewChannelWriter()
 	r.w = cw
 
+	r.copyWg.Add(1)
 	go func() {
+		defer r.copyWg.Done()
 		r.logger.Info("starting copy")
 		b, copyErr := io.Copy(cw, r.stream)
-		if copyErr != nil {
+		if copyErr != nil && copyErr != io.EOF {
 			r.logger.Error("error copying stream to buffer", "err", copyErr, "written", ByteCountIEC(b))
-			return
 		}
 	}()
 
@@ -71,11 +74,6 @@ func (r *Ripper) running(ctx context.Context) error {
 
 	r.stream.MetadataCallbackFunc = func(m *shoutcast.Metadata) {
 		r.logger.Info("now listening to", "title", m.StreamTitle)
-
-		time.Sleep(5 * time.Second)
-		if f != nil {
-			f.Close()
-		}
 
 		var name string
 		if r.cfg.Dir != "" {
@@ -92,18 +90,28 @@ func (r *Ripper) running(ctx context.Context) error {
 		if name != fileName {
 			fileName = name
 
+			// Cancel previous writer, then wait for it to exit so only one goroutine
+			// reads from the channel at a time (avoids splitting the stream).
+			if cancel != nil {
+				cancel()
+			}
+			if writerDone != nil {
+				<-writerDone
+			}
+
 			f, err = os.Create(name)
 			if err != nil {
 				r.logger.Error("error creating file", "err", err)
 			}
 
-			if cancel != nil {
-				cancel()
-			}
-
 			wCtx, cancel = context.WithCancel(ctx)
+			writerDone = make(chan struct{})
+			done := writerDone
 			r.logger.Debug("starting new writer")
-			go r.writeToFile(wCtx, cw.dataChan, bufferMutex, f)
+			go func() {
+				defer close(done)
+				r.writeToFile(wCtx, cw.dataChan, bufferMutex, f)
+			}()
 		}
 	}
 
@@ -118,46 +126,113 @@ func (r *Ripper) stopping(_ error) error {
 	r.logger.Info("stopping")
 
 	var errs []error
-	var err error
-
-	err = r.w.Close()
-	if err != nil {
-		errs = append(errs, err)
+	// Close stream first so io.Copy gets EOF and exits; then wait for copy
+	// goroutine before closing the channel (otherwise we get "read/write on closed pipe").
+	if r.stream != nil {
+		if err := r.stream.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
+	r.copyWg.Wait()
 
-	err = r.stream.Close()
-	if err != nil {
-		errs = append(errs, err)
+	if r.w != nil {
+		if err := r.w.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-
 	return nil
 }
 
 func (r *Ripper) writeToFile(ctx context.Context, dataChan chan []byte, bufferMutex *sync.Mutex, f *os.File) {
 	var err error
+	firstWrite := true
+	buffer := make([]byte, 0, 4096) // Buffer to accumulate data until we find frame sync
 
 	for {
 		select {
 		case <-ctx.Done():
-			// Context canceled, stop writing to the file.
-			r.logger.Info("context canceled, closing file")
+			// Context canceled (new track started), stop writing and close file.
+			r.logger.Debug("context canceled, closing file")
 			if f != nil {
-				f.Close()
+				// Write any remaining buffered data
+				if len(buffer) > 0 {
+					bufferMutex.Lock()
+					_, err = f.Write(buffer)
+					bufferMutex.Unlock()
+				}
+				// Flush and sync before closing to ensure all data is written
+				if syncErr := f.Sync(); syncErr != nil {
+					r.logger.Error("error syncing file", "err", syncErr)
+				}
+				if closeErr := f.Close(); closeErr != nil {
+					r.logger.Error("error closing file", "err", closeErr)
+				}
 			}
 			return
-		case b := <-dataChan:
-			bufferMutex.Lock()
-			_, err = f.Write(b)
-			if err != nil {
-				r.logger.Error("error writing to file", "err", err)
-				bufferMutex.Unlock()
+		case b, ok := <-dataChan:
+			if !ok {
+				// Channel closed (shutdown); close file and exit
+				if f != nil {
+					if len(buffer) > 0 {
+						bufferMutex.Lock()
+						_, _ = f.Write(buffer)
+						bufferMutex.Unlock()
+					}
+					_ = f.Sync()
+					_ = f.Close()
+				}
 				return
 			}
-			bufferMutex.Unlock()
+			if len(b) == 0 {
+				continue
+			}
+			
+			if firstWrite {
+				// Find the first MP3 frame sync in the accumulated buffer + new data
+				buffer = append(buffer, b...)
+				framePos := findMP3FrameSync(buffer)
+				if framePos >= 0 {
+					// Found frame sync, write from that position
+					bufferMutex.Lock()
+					_, err = f.Write(buffer[framePos:])
+					if err != nil {
+						r.logger.Error("error writing to file", "err", err)
+						bufferMutex.Unlock()
+						return
+					}
+					bufferMutex.Unlock()
+					buffer = buffer[:0] // Clear buffer
+					firstWrite = false
+				} else if len(buffer) > 8192 {
+					// Buffer is getting large, write it anyway (might be valid MP3 without sync)
+					r.logger.Warn("no MP3 frame sync found in first 8KB, writing anyway")
+					bufferMutex.Lock()
+					_, err = f.Write(buffer)
+					if err != nil {
+						r.logger.Error("error writing to file", "err", err)
+						bufferMutex.Unlock()
+						return
+					}
+					bufferMutex.Unlock()
+					buffer = buffer[:0]
+					firstWrite = false
+				}
+				// Otherwise, keep buffering
+			} else {
+				// Normal write after finding first frame
+				bufferMutex.Lock()
+				_, err = f.Write(b)
+				if err != nil {
+					r.logger.Error("error writing to file", "err", err)
+					bufferMutex.Unlock()
+					return
+				}
+				bufferMutex.Unlock()
+			}
 		}
 	}
 }
