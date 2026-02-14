@@ -1,0 +1,36 @@
+---
+depends_on: []
+kind: pipeline
+name: ci
+services:
+- image: docker:dind
+  name: docker
+  privileged: true
+  volumes:
+  - name: dockersock
+    path: /var/run
+steps:
+- commands:
+  - make compile-only
+  image: zachfi/streamgo-ci-tools:latest
+  name: compile-only
+  pull: always
+- commands:
+  - make docker registry=reg.dist.svc.cluster.znet:5000
+  image: zachfi/streamgo-ci-tools:latest
+  name: build-image
+  pull: always
+  volumes:
+  - name: dockersock
+    path: /var/run
+  when:
+    ref:
+    - refs/heads/main
+trigger:
+  ref:
+  - refs/heads/main
+  - refs/heads/dependabot/**
+  - refs/pull/*/head
+volumes:
+- name: dockersock
+  temp: {}
