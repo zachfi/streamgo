@@ -1,40 +1,50 @@
-#############################
-# Global vars
-#############################
-PROJECT_NAME := $(shell basename $(shell pwd))
-PROJECT_VER  ?= $(shell git describe --tags --always --dirty | sed -e '/^v/s/^v\(.*\)$$/\1/g')
-# Last released version (not dirty)
-PROJECT_VER_TAGGED  := $(shell git describe --tags --always --abbrev=0 | sed -e '/^v/s/^v\(.*\)$$/\1/g')
+# streamgo - minimal example of unified build structure
+#
+# Include vars first so VERSION etc. are set; then override project-specific
+# variables. See build/README.md for variables and optional includes.
 
-SRCDIR       ?= .
-GO            = go
+#############################
+# Core (always include vars first)
+#############################
+include build/vars.mk
 
-# The root module (from go.mod)
-PROJECT_MODULE  ?= $(shell $(GO) list -m)
+#############################
+# Project-specific overrides
+#############################
+IMG       ?= zachfi/streamgo:$(VERSION)
+LATESTIMG ?= zachfi/streamgo:latest
 
 #############################
 # Targets
 #############################
 all: build
 
-# Humans running make:
+# Humans: full local build
 build: check-version clean lint test cover-report proto gofmt-fix compile
 
-# Build command for CI tooling
+# CI: no coverage report, no proto
 build-ci: check-version clean lint test compile-only
 
-# All clean commands
 clean: cover-clean compile-clean release-clean
 
-# Import fragments
-include build/compile.mk
+#############################
+# Build partials (order can matter for overrides)
+#############################
+include build/util.mk
+include build/tools.mk
 include build/deps.mk
+include build/compile.mk
 include build/docker.mk
 include build/document.mk
 include build/lint.mk
 include build/release.mk
 include build/test.mk
-include build/tools.mk
-include build/util.mk
+
+# Optional: uncomment if this project had protos
+# PROTO_GRPC_FILES = path/to/file.proto
+# include build/proto.mk
+
+# Optional: uncomment for operator/manager image build and push
+# include build/kube_builder.mk
 
 .PHONY: all build build-ci clean

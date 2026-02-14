@@ -1,27 +1,28 @@
 #
-# Makefile fragment for Docker actions
+# Makefile fragment for Docker actions (login, generic build, snapshot)
 #
-DOCKER            ?= docker
+# For operator/manager image build and push, use build/kube_builder.mk instead.
+# Expects build/vars.mk for IMG, LATESTIMG, PROJECT_VER, DOCKER.
+#
 
 docker-login:
 	@echo "=== $(PROJECT_NAME) === [ docker-login     ]: logging into docker hub"
-	@if [ -z "${DOCKER_USERNAME}" ]; then \
+	@if [ -z "$${DOCKER_USERNAME}" ]; then \
 		echo "Failure: DOCKER_USERNAME not set" ; \
 		exit 1 ; \
 	fi
-	@if [ -z "${DOCKER_PASSWORD}" ]; then \
+	@if [ -z "$${DOCKER_PASSWORD}" ]; then \
 		echo "Failure: DOCKER_PASSWORD not set" ; \
 		exit 1 ; \
 	fi
 	@echo "=== $(PROJECT_NAME) === [ docker-login     ]: username: '$$DOCKER_USERNAME'"
-	@echo ${DOCKER_PASSWORD} | $(DOCKER) login -u ${DOCKER_USERNAME} --password-stdin
+	@echo $${DOCKER_PASSWORD} | $(DOCKER) login -u $${DOCKER_USERNAME} --password-stdin
 
 docker:
-	docker build -t zachfi/streamgo .
+	$(DOCKER) build -t $(IMG) .
 
 docker-snapshot: docker
-	docker tag zachfi/streamgo:latest zachfi/streamgo:${PROJECT_VER}
-	docker push zachfi/streamgo:${PROJECT_VER}
+	$(DOCKER) tag $(IMG) $(LATESTIMG)
+	$(DOCKER) push $(IMG)
 
-
-.PHONY: docker-login
+.PHONY: docker-login docker docker-snapshot

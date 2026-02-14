@@ -1,49 +1,32 @@
 #
-# Makefile Fragment for Compiling
+# Makefile fragment for compiling Go commands (cmd/*)
+#
+# Expects build/vars.mk (or equivalent) to set: GO, SRCDIR, BUILD_DIR,
+# PROJECT_NAME, PROJECT_VER, PROJECT_MODULE, GOOS, GOARCH.
 #
 
-GO         ?= go
-BUILD_DIR  ?= ./bin/
-PROJECT_MODULE ?= $(shell $(GO) list -m)
-# $b replaced by the binary name in the compile loop, -s/w remove debug symbols
+# Reject invalid GOOS from environment (e.g. GOOS=X:nodwarf5 from mistaken export).
+# override is required so we win over GOOS set in the environment.
+VALID_GOOS := linux darwin windows freebsd netbsd openbsd plan9 android
+ifneq ($(filter $(GOOS),$(VALID_GOOS)),)
+# GOOS is valid, use it
+else
+override GOOS := $(NATIVEOS)
+endif
+
+# $b replaced by the binary name in the compile loop; -s/-w strip debug symbols
 LDFLAGS    ?= "-s -w -X main.Version=$(PROJECT_VER) -X main.appName=$$b"
-SRCDIR     ?= .
 COMPILE_OS ?= freebsd linux
 
-# Determine commands by looking into cmd/*
-COMMANDS   ?= $(wildcard ${SRCDIR}/cmd/*)
-
-# Determine binary names by stripping out the dir names
-BINS       := $(foreach cmd,${COMMANDS},$(notdir ${cmd}))
-
+# Commands from cmd/*
+COMMANDS   ?= $(wildcard $(SRCDIR)/cmd/*)
+BINS       := $(foreach cmd,$(COMMANDS),$(notdir $(cmd)))
 
 compile-clean:
 	@echo "=== $(PROJECT_NAME) === [ compile-clean    ]: removing binaries..."
 	@rm -rfv $(BUILD_DIR)/*
 
 compile: deps compile-only
-
-proto: proto-grpc gofmt-fix
-
-proto-grpc:
-	@echo "=== $(PROJECT_NAME) === [ proto compile    ]: compiling protobufs:"
-	@protoc -I ./ \
-		--go_out=./ --go_opt=paths=source_relative \
-		--go-grpc_out=./ --go-grpc_opt=paths=source_relative \
-		rpc/rpc.proto \
-		pkg/iot/iot.proto \
-		internal/astro/astro.proto \
-		internal/agent/agent.proto \
-		modules/lights/lights.proto \
-		modules/timer/named/named.proto \
-		modules/inventory/inventory.proto \
-		modules/telemetry/telemetry.proto
-	@protoc -I modules/inventory/ -I ./ \
-		--gotemplate_out=template_dir=modules/inventory/templates,debug=false,single-package-mode=true,all=true:modules/inventory \
-		modules/inventory/inventory.proto
-	@protoc -I modules/inventory/ -I ./ \
-		--gotemplate_out=template_dir=cmd/inventory/templates,debug=false,single-package-mode=true,all=true:cmd/inventory \
-		modules/inventory/inventory.proto
 
 compile-all: deps-only
 	@echo "=== $(PROJECT_NAME) === [ compile          ]: building commands:"
@@ -59,14 +42,12 @@ compile-all: deps-only
 compile-only: deps-only
 	@echo "=== $(PROJECT_NAME) === [ compile          ]: building commands:"
 	@mkdir -p $(BUILD_DIR)/$(GOOS)
-	# CGO_ENABLED=0 GOOS=$(GOOS) $(GO) build -ldflags=$(LDFLAGS) -o $(BUILD_DIR)/$(GOOS)/$(PROJECT_NAME) . ; 
 	@for b in $(BINS); do \
 		echo "=== $(PROJECT_NAME) === [ compile          ]:     $(BUILD_DIR)$(GOOS)/$$b"; \
 		BUILD_FILES=`find $(SRCDIR)/cmd/$$b -type f -name "*.go"` ; \
 		CGO_ENABLED=0 GOOS=$(GOOS) $(GO) build -ldflags=$(LDFLAGS) -o $(BUILD_DIR)/$(GOOS)/$$b $$BUILD_FILES ; \
 	done
 
-# Override GOOS for these specific targets
 compile-darwin: GOOS=darwin
 compile-darwin: deps-only compile-only
 
@@ -76,5 +57,4 @@ compile-linux: deps-only compile-only
 compile-freebsd: GOOS=freebsd
 compile-freebsd: deps-only compile-only
 
-
-.PHONY: clean-compile compile compile-darwin compile-linux compile-only compile-freebsd
+.PHONY: compile-clean compile compile-all compile-only compile-darwin compile-linux compile-freebsd
