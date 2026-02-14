@@ -1,0 +1,23 @@
+# Dependabot: keep go.mod (root and tools/) and Dockerfile up to date.
+# PRs trigger on refs/heads/dependabot/** in build/drone.jsonnet.
+# To auto-merge when CI passes: enable "Allow auto-merge" in repo Settings →
+# Pull Requests, and use .github/workflows/dependabot-automerge.yml (or enable
+# auto-merge manually on each Dependabot PR).
+
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directories:
+      - "/"
+      - "/tools"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "docker"
+    directories:
+      - "/"
+      - "/tools"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
