@@ -1,4 +1,4 @@
-FROM alpine:3.18
+FROM alpine:3.23
 COPY ./bin/linux/streamgo /bin/streamgo
 RUN chmod 0700 /bin/streamgo
 RUN mkdir /var/streamgo
