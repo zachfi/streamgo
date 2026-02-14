@@ -34,3 +34,8 @@ trigger:
 volumes:
 - name: dockersock
   temp: {}
+---
+kind: signature
+hmac: 298caaa88c418d6dccde51f96580f6d825ea93ccc795507f044cf9f7104f2ddf
+
+...
