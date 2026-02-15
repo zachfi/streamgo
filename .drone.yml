@@ -3,7 +3,7 @@ depends_on: []
 kind: pipeline
 name: ci
 services:
-- image: docker:dind
+- image: docker:24-dind
   name: docker
   privileged: true
   volumes:
@@ -49,6 +49,6 @@ volumes:
   temp: {}
 ---
 kind: signature
-hmac: 27a155760873c15828f7b10e69e4e2f07443c317f925cfb205ec56f77c03a128
+hmac: b15dded71d791bcffcdfbd4b34800ce6482671d47eeb9cdc9b666c113cbd0bb8
 
 ...
