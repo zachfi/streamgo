@@ -11,14 +11,27 @@ services:
     path: /var/run
 steps:
 - commands:
+  - make tools-image-build registry=reg.dist.svc.cluster.znet:5000
+  - make tools-image-push registry=reg.dist.svc.cluster.znet:5000
+  image: reg.dist.svc.cluster.znet:5000/zachfi/streamgo-ci-tools:latest
+  name: build-tools
+  pull: always
+  volumes:
+  - name: dockersock
+    path: /var/run
+  when:
+    ref:
+    - refs/heads/main
+- commands:
   - make compile-only
-  image: zachfi/streamgo-ci-tools:latest
+  image: reg.dist.svc.cluster.znet:5000/zachfi/streamgo-ci-tools:latest
   name: compile-only
   pull: always
 - commands:
   - make docker registry=reg.dist.svc.cluster.znet:5000
-  image: zachfi/streamgo-ci-tools:latest
-  name: build-image
+  - make docker-push registry=reg.dist.svc.cluster.znet:5000
+  image: reg.dist.svc.cluster.znet:5000/zachfi/streamgo-ci-tools:latest
+  name: build-app
   pull: always
   volumes:
   - name: dockersock
@@ -36,6 +49,6 @@ volumes:
   temp: {}
 ---
 kind: signature
-hmac: 298caaa88c418d6dccde51f96580f6d825ea93ccc795507f044cf9f7104f2ddf
+hmac: 27a155760873c15828f7b10e69e4e2f07443c317f925cfb205ec56f77c03a128
 
 ...
