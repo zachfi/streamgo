@@ -1,6 +1,6 @@
 module github.com/zachfi/streamgo
 
-go 1.21.0
+go 1.26
 
 require (
 	github.com/go-kit/log v0.2.1
