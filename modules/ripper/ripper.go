@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"sync"
+	"time"
 
 	"github.com/grafana/dskit/services"
 
@@ -16,11 +17,12 @@ import (
 
 type Ripper struct {
 	services.Service
-	cfg    *Config
-	logger *slog.Logger
-	stream *shoutcast.Stream
-	w      *ChannelWriter
-	copyWg sync.WaitGroup // signals when the io.Copy goroutine has exited
+	cfg         *Config
+	logger      *slog.Logger
+	stream      *shoutcast.Stream
+	streamMutex sync.Mutex // protects stream for replace and close
+	w           *ChannelWriter
+	copyWg      sync.WaitGroup // signals when the io.Copy goroutine has exited
 }
 
 var module = "ripper"
@@ -41,14 +43,6 @@ func New(cfg Config, logger slog.Logger) (*Ripper, error) {
 }
 
 func (r *Ripper) starting(ctx context.Context) error {
-	stream, err := shoutcast.Open(r.cfg.URL)
-	if err != nil {
-		r.logger.Error("error opening stream", "err", err)
-		return err
-	}
-
-	r.stream = stream
-
 	return nil
 }
 
@@ -63,82 +57,143 @@ func (r *Ripper) running(ctx context.Context) error {
 	cw := NewChannelWriter()
 	r.w = cw
 
-	r.copyWg.Add(1)
-	go func() {
-		defer r.copyWg.Done()
-		r.logger.Info("starting copy")
-		b, copyErr := io.Copy(cw, r.stream)
-		if copyErr != nil && copyErr != io.EOF {
-			r.logger.Error("error copying stream to buffer", "err", copyErr, "written", ByteCountIEC(b))
-		}
-	}()
+	initialBackoff := r.cfg.ReconnectBackoff
+	if initialBackoff <= 0 {
+		initialBackoff = 5 * time.Second
+	}
+	maxBackoff := r.cfg.ReconnectBackoffMax
+	if maxBackoff <= 0 {
+		maxBackoff = 60 * time.Second
+	}
 
 	fileName := ""
 
-	r.stream.MetadataCallbackFunc = func(m *shoutcast.Metadata) {
-		r.logger.Info("now listening to", "title", m.StreamTitle)
+	metadataCallback := func(stream *shoutcast.Stream) func(m *shoutcast.Metadata) {
+		return func(m *shoutcast.Metadata) {
+			r.logger.Info("now listening to", "title", m.StreamTitle)
 
-		var name string
-		if r.cfg.Dir != "" {
-			name = path.Join(r.cfg.Dir, r.stream.Name, m.StreamTitle+".mp3")
-		} else {
-			name = path.Join(r.stream.Name, m.StreamTitle+".mp3")
-		}
-
-		err := os.MkdirAll(path.Dir(name), os.ModePerm)
-		if err != nil {
-			r.logger.Error("error creating stream directory", "err", err)
-		}
-
-		if name != fileName {
-			fileName = name
-
-			// Cancel previous writer, then wait for it to exit so only one goroutine
-			// reads from the channel at a time (avoids splitting the stream).
-			if cancel != nil {
-				cancel()
-			}
-			if writerDone != nil {
-				<-writerDone
+			var name string
+			if r.cfg.Dir != "" {
+				name = path.Join(r.cfg.Dir, stream.Name, m.StreamTitle+".mp3")
+			} else {
+				name = path.Join(stream.Name, m.StreamTitle+".mp3")
 			}
 
-			dir := path.Dir(name)
-			tmpF, err := os.CreateTemp(dir, "*.mp3.tmp")
+			err := os.MkdirAll(path.Dir(name), os.ModePerm)
 			if err != nil {
-				r.logger.Error("error creating temp file", "err", err)
+				r.logger.Error("error creating stream directory", "err", err)
+			}
+
+			if name != fileName {
+				fileName = name
+
+				if cancel != nil {
+					cancel()
+				}
+				if writerDone != nil {
+					<-writerDone
+				}
+
+				dir := path.Dir(name)
+				tmpF, err := os.CreateTemp(dir, "*.mp3.tmp")
+				if err != nil {
+					r.logger.Error("error creating temp file", "err", err)
+					return
+				}
+				f = tmpF
+
+				wCtx, cancel = context.WithCancel(ctx)
+				writerDone = make(chan struct{})
+				done := writerDone
+				r.logger.Debug("starting new writer")
+				go func() {
+					defer close(done)
+					r.writeToFile(wCtx, cw.dataChan, bufferMutex, f, name)
+				}()
+			}
+		}
+	}
+
+	r.copyWg.Add(1)
+	go func() {
+		defer r.copyWg.Done()
+		backoff := initialBackoff
+		for {
+			if ctx.Err() != nil {
 				return
 			}
-			f = tmpF
+			stream, err := shoutcast.Open(r.cfg.URL)
+			if err != nil {
+				r.logger.Error("error opening stream, reconnecting", "err", err, "backoff", backoff)
+				if r.sleepCtx(ctx, backoff) != nil {
+					return
+				}
+				if backoff < maxBackoff {
+					backoff = min(backoff*2, maxBackoff)
+				}
+				continue
+			}
+			backoff = initialBackoff // reset after successful connect
 
-			wCtx, cancel = context.WithCancel(ctx)
-			writerDone = make(chan struct{})
-			done := writerDone
-			r.logger.Debug("starting new writer")
-			go func() {
-				defer close(done)
-				r.writeToFile(wCtx, cw.dataChan, bufferMutex, f, name)
-			}()
+			stream.MetadataCallbackFunc = metadataCallback(stream)
+			r.streamMutex.Lock()
+			r.stream = stream
+			r.streamMutex.Unlock()
+
+			r.logger.Info("stream connected, copying")
+			_, copyErr := io.Copy(cw, stream)
+
+			r.streamMutex.Lock()
+			if r.stream == stream {
+				r.stream = nil
+			}
+			_ = stream.Close()
+			r.streamMutex.Unlock()
+
+			if copyErr != nil && copyErr != io.EOF {
+				r.logger.Warn("stream disconnected, reconnecting", "err", copyErr, "backoff", backoff)
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			if r.sleepCtx(ctx, backoff) != nil {
+				return
+			}
+			if backoff < maxBackoff {
+				backoff = min(backoff*2, maxBackoff)
+			}
 		}
-	}
+	}()
 
-	if cancel != nil {
-		cancel()
-	}
 	<-ctx.Done()
 	return nil
+}
+
+// sleepCtx sleeps for d or until ctx is done. Returns ctx.Err() if context was cancelled.
+func (r *Ripper) sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 func (r *Ripper) stopping(_ error) error {
 	r.logger.Info("stopping")
 
 	var errs []error
-	// Close stream first so io.Copy gets EOF and exits; then wait for copy
-	// goroutine before closing the channel (otherwise we get "read/write on closed pipe").
+	// Close stream so io.Copy unblocks and the copy goroutine can exit; then wait for it.
+	r.streamMutex.Lock()
 	if r.stream != nil {
 		if err := r.stream.Close(); err != nil {
 			errs = append(errs, err)
 		}
+		r.stream = nil
 	}
+	r.streamMutex.Unlock()
 	r.copyWg.Wait()
 
 	if r.w != nil {
