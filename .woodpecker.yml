@@ -21,6 +21,9 @@
   "image": "reg.dist.svc.cluster.znet:5000/zachfi/streamgo-ci-tools:latest"
   "name": "compile-only"
   "pull": true
+  "when":
+  - "event": "push"
+  - "event": "pull_request"
 - "commands":
   - "make docker registry=reg.dist.svc.cluster.znet:5000"
   - "make docker-push registry=reg.dist.svc.cluster.znet:5000"
