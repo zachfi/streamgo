@@ -3,18 +3,16 @@
   "name": "docker"
   "privileged": true
   "volumes":
-  - "name": "dockersock"
-    "path": "/var/run"
+  - "dockersock:/var/run"
 "steps":
 - "commands":
   - "make tools-image-build registry=reg.dist.svc.cluster.znet:5000"
   - "make tools-image-push registry=reg.dist.svc.cluster.znet:5000"
   "image": "reg.dist.svc.cluster.znet:5000/zachfi/streamgo-ci-tools:latest"
   "name": "build-tools"
-  "pull": true
+  "pull": "always"
   "volumes":
-  - "name": "dockersock"
-    "path": "/var/run"
+  - "dockersock:/var/run"
   "when":
   - "branch": "main"
     "event": "push"
@@ -22,19 +20,15 @@
   - "make compile-only"
   "image": "reg.dist.svc.cluster.znet:5000/zachfi/streamgo-ci-tools:latest"
   "name": "compile-only"
-  "pull": true
+  "pull": "always"
 - "commands":
   - "make docker registry=reg.dist.svc.cluster.znet:5000"
   - "make docker-push registry=reg.dist.svc.cluster.znet:5000"
   "image": "reg.dist.svc.cluster.znet:5000/zachfi/streamgo-ci-tools:latest"
   "name": "build-app"
-  "pull": true
+  "pull": "always"
   "volumes":
-  - "name": "dockersock"
-    "path": "/var/run"
+  - "dockersock:/var/run"
   "when":
   - "branch": "main"
     "event": "push"
-"volumes":
-- "name": "dockersock"
-  "temp": {}
