@@ -1,7 +1,8 @@
 "clone":
   "git":
-    "environment":
-      "CURL_IPRESOLVE": "V4"
+    "dns":
+    - "8.8.8.8"
+    - "8.8.4.4"
     "image": "woodpeckerci/plugin-git"
 "services":
 - "image": "docker:24-dind"
@@ -21,6 +22,14 @@
   "when":
   - "branch": "main"
     "event": "push"
+- "commands":
+  - "sleep 600"
+  "image": "alpine:3.19"
+  "name": "debug-sleep"
+  "pull": true
+  "when":
+  - "branch": "debug"
+  - "event": "manual"
 - "commands":
   - "make compile-only"
   "image": "reg.dist.svc.cluster.znet:5000/zachfi/streamgo-ci-tools:latest"
