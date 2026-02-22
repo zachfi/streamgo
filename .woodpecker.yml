@@ -1,3 +1,8 @@
+"clone":
+  "git":
+    "environment":
+      "CURL_IPRESOLVE": "V4"
+    "image": "woodpeckerci/plugin-git"
 "services":
 - "image": "docker:24-dind"
   "name": "docker"
