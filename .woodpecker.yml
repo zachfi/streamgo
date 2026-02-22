@@ -1,15 +1,10 @@
-"clone":
-  "git":
-    "dns":
-    - "8.8.8.8"
-    - "8.8.4.4"
-    "image": "woodpeckerci/plugin-git"
 "services":
 - "image": "docker:24-dind"
   "name": "docker"
   "privileged": true
   "volumes":
   - "dockersock:/var/run"
+"skip_clone": true
 "steps":
 - "commands":
   - "sleep 60"
