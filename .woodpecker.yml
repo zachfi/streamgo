@@ -10,7 +10,7 @@
   - "make tools-image-push registry=reg.dist.svc.cluster.znet:5000"
   "image": "reg.dist.svc.cluster.znet:5000/zachfi/streamgo-ci-tools:latest"
   "name": "build-tools"
-  "pull": "always"
+  "pull": true
   "volumes":
   - "dockersock:/var/run"
   "when":
@@ -20,13 +20,13 @@
   - "make compile-only"
   "image": "reg.dist.svc.cluster.znet:5000/zachfi/streamgo-ci-tools:latest"
   "name": "compile-only"
-  "pull": "always"
+  "pull": true
 - "commands":
   - "make docker registry=reg.dist.svc.cluster.znet:5000"
   - "make docker-push registry=reg.dist.svc.cluster.znet:5000"
   "image": "reg.dist.svc.cluster.znet:5000/zachfi/streamgo-ci-tools:latest"
   "name": "build-app"
-  "pull": "always"
+  "pull": true
   "volumes":
   - "dockersock:/var/run"
   "when":
