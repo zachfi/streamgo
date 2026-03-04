@@ -100,6 +100,9 @@ func (r *Ripper) running(ctx context.Context) error {
 					r.logger.Error("error creating temp file", "err", err)
 					return
 				}
+				if err := writeID3v2Tag(tmpF, m.StreamTitle); err != nil {
+					r.logger.Error("error writing ID3 tag", "err", err)
+				}
 				f = tmpF
 
 				wCtx, cancel = context.WithCancel(ctx)
