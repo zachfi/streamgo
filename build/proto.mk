@@ -1,29 +1,19 @@
 #
-# build/proto.mk - Protobuf/GRPC code generation
+# build/proto.mk - Protobuf code generation (runs in tools container)
 #
-# Include this only in projects that use protobuf. In your Makefile, set
-# PROTO_GRPC_FILES to the list of .proto files (e.g. file.proto or dir/file.proto).
-# Optional: PROTO_IMPORT_DIRS for -I flags (default: .)
+# Uses buf (buf build, buf lint, buf generate) via TOOLS_CMD so no protoc/buf
+# need to be installed on the host. Include this only in projects that use protobuf.
 #
-# Example (in your Makefile):
-#   PROTO_GRPC_FILES = rpc/rpc.proto pkg/foo/foo.proto
-#   include build/vars.mk
-#   include build/proto.mk
+# Prerequisite: tools image (make tools-image-build). Configure buf in the repo
+# (e.g. buf.yaml, buf.gen.yaml) as usual.
 #
-PROTO_IMPORT_DIRS ?= .
-PROTO_GRPC_FILES  ?=
 
 proto: proto-grpc gofmt-fix
 
 proto-grpc:
-ifneq ($(PROTO_GRPC_FILES),)
-	@echo "=== $(PROJECT_NAME) === [ proto compile    ]: compiling protobufs"
-	@protoc $(addprefix -I ,$(PROTO_IMPORT_DIRS)) \
-		--go_out=./ --go_opt=paths=source_relative \
-		--go-grpc_out=./ --go-grpc_opt=paths=source_relative \
-		$(PROTO_GRPC_FILES)
-else
-	@echo "=== $(PROJECT_NAME) === [ proto            ]: PROTO_GRPC_FILES not set, skipping"
-endif
+	@echo "=== $(PROJECT_NAME) === [ proto            ]: compiling protobufs (buf)..."
+	@$(TOOLS_CMD) buf build
+	@$(TOOLS_CMD) buf lint
+	@$(TOOLS_CMD) buf generate
 
 .PHONY: proto proto-grpc

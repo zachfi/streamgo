@@ -18,15 +18,19 @@ PROJECT_MODULE ?= $(shell $(GO) list -m)
 
 LDFLAGS_UNIT ?= '-X $(PROJECT_MODULE)/internal/version.GitTag=$(PROJECT_VER_TAGGED)'
 
-test: test-only
-test-only: test-unit test-integration
+# Run tests in the tools container by default (uses image Go 1.26; avoids host GOTOOLCHAIN/PATH issues).
+# With USE_LOCAL_TOOLS=1, RUN_TOOL is empty and this runs test-only on the host.
+test:
+	@$(RUN_TOOL) make test-only
 
-test-unit:
+test-only: check-go test-unit test-integration
+
+test-unit: check-go
 	@echo "=== $(PROJECT_NAME) === [ test-unit        ]: running unit tests..."
 	@mkdir -p $(COVERAGE_DIR)
 	@$(TEST_RUNNER) -f testname -- -v -ldflags=$(LDFLAGS_UNIT) -parallel 4 -tags unit -covermode=$(COVERMODE) -coverprofile $(COVERAGE_DIR)/unit.tmp $(GO_PKGS)
 
-test-integration:
+test-integration: check-go
 	@echo "=== $(PROJECT_NAME) === [ test-integration ]: running integration tests..."
 	@mkdir -p $(COVERAGE_DIR)
 	@$(TEST_RUNNER) -f testname -- -v -parallel 4 -tags integration -covermode=$(COVERMODE) -coverprofile $(COVERAGE_DIR)/integration.tmp $(GO_PKGS)
