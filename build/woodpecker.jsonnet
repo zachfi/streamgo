@@ -25,8 +25,8 @@ local makeStep(name, makeTargets, when=null, volumeStrings=null, environment=nul
 );
 
 local mainOnly = [{ event: 'push', branch: 'main' }];
-// Run on push or pull_request (satisfies linter: "Set an event filter for all steps")
-local pushOrPR = [{ event: 'push' }, { event: 'pull_request' }];
+// Run on push, pull_request, or manual (satisfies linter: "Set an event filter for all steps")
+local pushOrPR = [{ event: 'push' }, { event: 'pull_request' }, { event: 'manual' }];
 
 // Connect to DinD over network (no dockersock PVC needed; works with RWO-only storage like local-path).
 local dockerEnv = { DOCKER_HOST: 'tcp://docker:2375', DOCKER_TLS_VERIFY: '0' };
@@ -46,6 +46,7 @@ local debugSleep60 = {
   name: 'debug-sleep-60',
   image: 'alpine:3.19',
   pull: true,
+  when: pushOrPR,
   commands: [ 'sleep 60' ],
 };
 
@@ -54,7 +55,7 @@ local cloneStep = {
   name: 'clone',
   image: 'woodpeckerci/plugin-git',
   pull: true,
-  dns: [ '8.8.8.8', '8.8.4.4' ],
+  when: pushOrPR,
 };
 
 // Optional: long sleep for deeper debugging (branch "debug" or manual run). Remove when not needed.
@@ -62,7 +63,7 @@ local debugSleep = {
   name: 'debug-sleep',
   image: 'alpine:3.19',
   pull: true,
-  when: [ { branch: 'debug' }, { event: 'manual' } ],
+  when: [ { event: 'push', branch: 'debug' }, { event: 'manual' } ],
   commands: [ 'sleep 600' ],
 };
 

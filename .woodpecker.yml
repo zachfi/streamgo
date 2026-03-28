@@ -11,12 +11,17 @@
   "image": "alpine:3.19"
   "name": "debug-sleep-60"
   "pull": true
-- "dns":
-  - "8.8.8.8"
-  - "8.8.4.4"
-  "image": "woodpeckerci/plugin-git"
+  "when":
+  - "event": "push"
+  - "event": "pull_request"
+  - "event": "manual"
+- "image": "woodpeckerci/plugin-git"
   "name": "clone"
   "pull": true
+  "when":
+  - "event": "push"
+  - "event": "pull_request"
+  - "event": "manual"
 - "commands":
   - "make tools-image-build registry=reg.dist.svc.cluster.znet:5000"
   - "make tools-image-push registry=reg.dist.svc.cluster.znet:5000"
@@ -36,6 +41,7 @@
   "pull": true
   "when":
   - "branch": "debug"
+    "event": "push"
   - "event": "manual"
 - "commands":
   - "make compile-only"
@@ -45,6 +51,7 @@
   "when":
   - "event": "push"
   - "event": "pull_request"
+  - "event": "manual"
 - "commands":
   - "make docker registry=reg.dist.svc.cluster.znet:5000"
   - "make docker-push registry=reg.dist.svc.cluster.znet:5000"
